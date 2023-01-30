@@ -1,0 +1,163 @@
+n:=9; //n:=148;
+np:=n+1; //np:=n+1;
+d:=5; //d:=37;
+k:=np-d+1;
+a:=2; //a:=12;
+p:=4;//p:=414; //2*k-np+a;
+m:=d+k+p-a;
+F:=GF(2);
+gg<y> := IrreduciblePolynomial(F,d);
+E<b> := ExtensionField<F, y | gg>;
+V,Phi:=VectorSpace(E,F);
+G:=RandomMatrix(F,k,np-k);
+H:=HorizontalJoin(-Transpose(G),IdentityMatrix(F,np-k));
+G:=HorizontalJoin(IdentityMatrix(F,k),G);
+G_comp:=RandomMatrix(F,np-k,np);
+while Rank(VerticalJoin(G,G_comp)) lt np do
+	G_comp:=RandomMatrix(F,np-k,np);
+end while;
+alpha:=[RandomMatrix(F,np,np-k)*H: i in [1..k]];// cat [RandomMatrix(F,np,np): i in [1..p]];// to edit still
+alphar:=[RandomMatrix(F,np,np): i in [1..p-a]];
+alphard:=[RandomMatrix(F,d,d): i in [1..a]];
+
+T:=RandomMatrix(F,m,m);
+while Rank(T) lt m do
+	T:=RandomMatrix(F,m,m);
+end while;
+U:=RandomMatrix(F,n,n);
+while Rank(U) lt n do
+	U:=RandomMatrix(F,n,n);
+end while;
+UGC:=U*VerticalJoin(G,Submatrix(G_comp,1,1,np-k-1,np));
+UGCE,UGCinv:=EchelonForm(Transpose(UGC));
+UGCinv:=Submatrix(Transpose(UGCinv),1,1,np,n);
+VC:=Submatrix(G_comp,np-k,1,1,np);
+function cstar(x)
+	t:=&+[x[1][i]*b^(i-1): i in [1..d]]; t;
+	return Matrix(Phi(t));
+end function;
+"Key Gen Complete";
+function encrypt(x)
+	u:=x*UGC+VC;
+	s:=HorizontalJoin(u*Transpose(H),ZeroMatrix(F,1,1));
+	t:=Submatrix(cstar(s),1,1,1,d-a);
+	return HorizontalJoin(HorizontalJoin(Matrix([[(u*alpha[i]*Transpose(u))[1][1]: i in [1..k]]]),t),HorizontalJoin(Matrix([[(s*alphard[i]*Transpose(s))[1][1]: i in [1..a]]]),Matrix([[(u*alphar[i]*Transpose(u))[1][1]: i in [1..p-a]]])));
+end function;
+S_basis:=G_comp*Transpose(H);
+h:=InverseMod(65,2^d-1);
+o:=HorizontalJoin(IdentityMatrix(F,1),ZeroMatrix(F,1,d-1));
+function vector_enum(s,l)
+	if l eq 0 then
+		return ZeroMatrix(F,1,0);
+	else
+		if s mod 2 eq Zero(F) then
+			return HorizontalJoin(ZeroMatrix(F,1,1),vector_enum(Truncate(s/2),l-1));
+		else
+			return HorizontalJoin(IdentityMatrix(F,1),vector_enum(Truncate((s-1)/2),l-1));
+		end if;
+	end if;
+end function;
+
+function cstarinv(y)
+	s:=&+[y[1][i]*b^(i-1): i in [1..d]];
+/*	pow:=h;
+	pv:=y;
+	while pow gt 0 do
+		if pow mod 2 eq 1 then
+			s:=mult(s,pv);
+			pow:=pow-1;
+		end if;
+		pv:=mult(pv,pv);
+		pow:=Truncate(pow/2);
+	end while;*/
+	return Matrix(Phi(s^h));
+end function;
+
+function preimage(y)
+	v:=y*T^-1;
+	v1:=Submatrix(v,1,1,1,k);
+	v2:=Submatrix(v,1,k+1,1,d-a);
+	v3:=Submatrix(v,1,k+d-a+1,1,a);
+	v4:=Submatrix(v,1,k+d+1,1,p-a);
+	pre_x:=ZeroMatrix(F,1,np);
+	not_found:=true;
+	index:=0;
+	inner_index:=0;
+	//totalTime:=0;
+	while not_found and index lt 2^a do
+		suffix:=vector_enum(index,a);
+		//ttime:=Cputime();
+		s:=cstarinv(HorizontalJoin(v2,suffix));
+		good:=true;
+		gi:=1;
+		while good and gi le a do
+			good:= (s*alphard[gi]*Transpose(s))[1][1] eq v3[1][gi];
+			gi:=gi+1;
+		end while;
+		//totalTime:=totalTime+Cputime(ttime);
+		if good then
+			s:=Submatrix(s,1,1,1,d-1);
+			co_base:=s*S_basis^-1;
+			up:=co_base*G_comp;
+			summand:=Matrix([[(up*alpha[i]*Transpose(up))[1][1]: i in [1..k]]]);
+			factor:=ZeroMatrix(F,k,0);
+			for i in [1..k] do
+				factor:=HorizontalJoin(factor,G*alpha[i]*Transpose(up));
+			end for;
+			flg,u_cand,N:=IsConsistent(factor,v1+summand);
+			if flg then
+				if Rank(N) eq 0 then
+					//printf "RANK WAS ZERO.\n";
+					pre_u:=u_cand*G+up;
+					pre_u:=pre_u+VC;
+					pre_x:=pre_u*UGCinv;
+					not_found:=encrypt(pre_x) ne y;
+				else
+					i:=0;
+					dim:=Rank(N);
+					while not_found and i lt 2^dim do
+						//printf "RANK WAS NONZERO: STEP %o OF %o.\n",i+1,dim;
+						inner_index:=inner_index+1;
+						pre_u:=(u_cand+vector_enum(i,dim)*Matrix(SetToSequence(Generators(N))))*G+up;
+						//printf "second loop\n";
+						pre_u:=pre_u+VC;
+						pre_x:=pre_u*UGCinv;
+						not_found:=encrypt(pre_x) ne y;
+						i:=i+1;
+					end while;
+				end if;
+			end if;
+		end if;
+		index:=index+1;
+	end while;
+	//printf "CSTAR INVERSION TIME %o.\n",totalTime;
+	return pre_x,index,inner_index;
+end function;
+"UGC, alpha, alphar, U T";
+pt:=[RandomMatrix(F,1,n): i in [1..100]];
+t:=Cputime();
+for i in [1..10] do
+	y:=encrypt(pt[i]);
+end for;
+t:=Cputime(t);
+printf "Encryption Average = %oms.\n",t*100;
+ct:=[encrypt(pt[i]): i in [1..10]];
+index_total:=0;
+t:=Cputime();
+for i in [1..10] do
+	pre_x,val:=preimage(ct[i]);
+	index_total:=index_total+val;
+end for;
+t:=Cputime(t);
+printf "Decryption Average = %oms.\n",t*100;
+printf "Average number of inversions = %o\n",index_total/10.0;
+
+
+////
+
+P<[X]> := PolynomialRing(E,9);
+x := Matrix(P,1,9,[X[1],x[2],x[3],x[4],x[5],x[6],x[7],x[8],x[9]]);
+u:=x*UGC+VC;
+s:=HorizontalJoin(u*Transpose(H),ZeroMatrix(F,1,1));
+t:=Submatrix(cstar(s),1,1,1,d-a);
+PK := HorizontalJoin(HorizontalJoin(Matrix([[(u*alpha[i]*Transpose(u))[1][1]: i in [1..k]]]),t),HorizontalJoin(Matrix([[(s*alphard[i]*Transpose(s))[1][1]: i in [1..a]]]),Matrix([[(u*alphar[i]*Transpose(u))[1][1]: i in [1..p-a]]]));
