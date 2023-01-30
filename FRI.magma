@@ -1,0 +1,228 @@
+m:=10;
+
+F:=FiniteField(2); //GF(2^(10));
+E:=ext<F|m>;
+V,ph:=VectorSpace(E,F);
+iph:=Inverse(ph);
+P<x>:=PolynomialRing(E);
+
+k:=2^8; //message length
+n:=2^10; //block length
+b:=1; //number in original building zero set //if this is 1 then it holds with the halving property sorta
+k0:=Log(2,#E); //dim of L^0 -- in this case
+rho:=k/n; //code rate
+R:= -Log(2,rho); //calculating the rate parameter from code rate
+r:=Floor((k0-R)/b); //number of L spaces
+
+
+Z:=[[]];
+Q:=[];
+
+// Puts the entire space in the L^(0) position
+test:=[];
+for i in E do
+  test:=Append(test,i);
+end for;
+L:=[test];
+
+
+//Choose eta and generate the span of those elements to be L^(i)_0
+
+// Initial step using the entire field
+K:=V;
+LZ:=[];
+for i in [1..b] do
+  LZ:=LZ cat [Random(V)];
+end for;
+
+LZ:=sub<V|LZ>;
+LZ:=iph(Set(LZ));
+
+// Loop through to create all of the Li spaces
+for j in [1..r] do
+  //print("a");
+
+  //define the q polynomial
+  q := &*[x-l:l in LZ];
+  Q := Q cat [q];
+
+  // Definiting the Li sets
+  LL := [];
+  for i in K do
+    if Evaluate(q,iph(i)) notin LL then
+      LL:= LL cat [Evaluate(q,iph(i))];
+    end if;
+  end for;
+
+ Z:=Z cat [[LZ]];
+ L:=L cat [LL];
+ K:=ph(LL);
+
+ // ****** find a way to stop if it skips 2
+ if #LL eq 1 then
+   break j;
+ end if;
+
+
+ // Define the Li0 set as a subspace
+ LZ:=[];
+ for i in [1..b] do
+   LZ:=LZ cat [Random(K)];
+ end for;
+ LZ:=sub<V|LZ>;
+ LZ:=iph(Set(LZ));
+end for;
+
+C:=[#E];
+for k in [2..#L] do
+  C:=C cat [#L[k]]; //Cardinalities of L^i's
+end for;
+
+// Prover Input f^(0) - polynomial E
+fi:=0*x;
+for i in [0..k-1] do
+  fi:=fi+Random(E)*x^i;
+end for;
+
+
+Codewords:=[fi];
+Xs:=[];
+D:=[Degree(fi)];
+
+//*** FRI - Commit
+// Finding the S_y's
+Y:=[[]];
+SY:=[[[]]];
+for j in [1..#Q-1] do
+  q := Q[j]; // take qi
+  SYY:=[[]];
+  YY:=[];
+  for i in L[j+1] do
+    sy:=[];
+    YY := YY cat [i];
+    for ii in L[j] do
+      if Evaluate(q,ii) eq i then
+        sy := sy cat [ii];
+      end if;
+    end for;
+     SYY:= SYY cat [sy];
+   end for;
+   SYY := Reverse(Prune(Reverse(SYY)));
+   SY := SY cat [SYY];
+   Y := Y cat [YY];
+end for;
+
+ Y := Reverse(Prune(Reverse(Y)));
+ SY := Reverse(Prune(Reverse(SY)));
+
+
+// Finding low degree Extension -- interpolant step
+PYY:=[[]];
+for t in [1..r-1] do //**************** change this back when it works
+  // Verifer sending x^(i) - in E
+    xi := Random(E);
+    Xs := Append(Xs,xi);
+
+    Py:=[];
+    X:=SY[t];
+    for ii in [1..#X] do
+      xseq := [E|X[ii,1]];
+      yseq := [E|Evaluate(fi,X[ii,1])];
+      for i in [2..#X[ii]] do
+        xseq := Append(xseq,X[ii,i]);
+        yseq := Append(yseq,Evaluate(fi,X[ii,i]));
+      end for;
+      Py := Py cat [Interpolation(xseq,yseq)];
+    end for;
+    PYY := PYY cat [Py];
+
+    ys := [E|Y[t,1]];
+    pxs := [E|Evaluate(Py[1],xi)];
+    for ii in [2..#Y[t]] do
+      ys := Append(ys,Y[t,ii]);
+      pxs := Append(pxs,Evaluate(Py[ii],xi));
+    end for;
+    fi := Interpolation(ys,pxs);
+    Codewords:=Append(Codewords,fi);
+    D := D cat [Degree(fi)];
+
+    if t eq #Q-1 then
+      d := rho*#L[r]-1;
+      Pr := Coefficients(fi);
+      PR := Pr;
+      if #Pr gt d then
+        PR := [];
+        for h in [1..d+1] do
+          PR := PR cat [Pr[h]];
+        end for;
+      end if;
+    end if;
+end for;
+
+real := Codewords;
+
+
+//Codewords[7] := x^7;
+
+//*** FRI - Query
+
+// pr:=0*x;
+// for i in [0..#PR-1] do
+//   pr:=pr+PR[i+1]*x^i;
+// end for;
+//
+// l := 4;
+//
+// for i in [1..l] do
+//   s0 := Random(L[1]);
+//   si := [s0];
+//   Si := [[]];
+//   for ii in [1..r-1] do
+//     s0 := Evaluate(Q[ii],s0);
+//     si := si cat [s0];
+//   end for;
+//
+//
+//   for ii in [1..r] do
+//     sii := [];
+//     q := Q[ii];
+//     test := Evaluate(q,si[ii]);
+//
+//     for iii in [1..#L[ii]] do
+//       if Evaluate(q,L[ii, iii]) eq test then
+//         sii := sii cat [L[ii,iii]];
+//       end if;
+//     end for;
+//     Si := Si cat [sii];
+//   end for;
+//   Si := Reverse(Prune(Reverse(Si)));
+//
+//   pi := [];
+//   for ii in [1..r] do
+//     input := [E|Si[ii,1]];
+//     fie := [E|Evaluate(Codewords[ii],Si[ii,1])];
+//     for iii in [2..#Si[ii]] do
+//       fie := Append(fie,Evaluate(Codewords[ii],Si[ii,iii]));
+//       input := Append(input,Si[ii,iii]);
+//     end for;
+//     pi := pi cat [Interpolation(input,fie)];
+//   end for;
+//
+//
+//
+//
+//   A := [];
+//   B := [];
+//   for ii in [1..r-1] do
+//     a:= Evaluate(Codewords[ii+1],si[ii+1]);
+//     b:= Evaluate(pi[ii],Xs[ii]);
+//     A := A cat [a];
+//     B := B cat [b];
+//     if a eq b then
+//       print("accept");
+//     else
+//       print("reject");
+//     end if;
+//   end for;
+//   print("-----------");
+//  end for;
